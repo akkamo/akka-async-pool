@@ -17,14 +17,14 @@ class RouterSpec extends FlatSpec with Matchers {
 
 
   /**
-    * congigured actor system
+    * configured actor system
     */
   private implicit val actorSystem = ActorSystem("test", ConfigFactory.load().getConfig("test.RouterSpec"))
 
   private val name = "TestConfig"
 
   private val sessionFactory = { name: String =>
-    val cfg = actorSystem.settings.config.getConfig(s"akka.actor.deployment./${name}.session")
+    val cfg = actorSystem.settings.config.getConfig(s"akka.actor.deployment./$name.session")
     val ret = cfg.getInt("value")
     ret
   }

@@ -65,8 +65,8 @@ object Router {
 
   /**
     * Job Response
-    * @param value job rfesult
-    * @param ctx optional context passed when ask (see. [[eu.akkamo.asyncpool.Router.??()]])  is called
+    * @param value job result
+    * @param ctx optional context passed when ask (see. [[eu.akkamo.asyncpool.Router.??]])  is called
     * @tparam V the job result Type
     * @tparam CTX optional context Type
     */
@@ -80,9 +80,9 @@ object Router {
 
   /**
     *
-    * @param ctxFactory function accepting [[String]]
+    * @param ctxFactory function accepting string
     * @param name router name
-    * @param as implicit [[akka.actor.ActorSystem]]
+    * @param as implicit Akka actor system
     * @tparam U the `ctx` type
     * @tparam V the Job result type
     * @return instance of router
@@ -93,9 +93,9 @@ object Router {
 
   /**
     *
-    * @param ctxFactory function accepting ([[String]], [[akka.actor.ActorSystem]])
+    * @param ctxFactory function accepting (string, Akka actor system)
     * @param name router name
-    * @param as implicit [[akka.actor.ActorSystem]]
+    * @param as implicit Akka actor system
     * @tparam U the `ctx` type
     * @tparam V the Job result type
     * @return instance of router
