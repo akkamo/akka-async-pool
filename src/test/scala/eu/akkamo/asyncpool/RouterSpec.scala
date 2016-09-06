@@ -29,7 +29,7 @@ class RouterSpec extends FlatSpec with Matchers {
     ret
   }
 
-  private lazy val router = Router.buildRouter[Int, Int](sessionFactory, name)
+  private lazy val router = Router.buildRouter[Int](sessionFactory, name)
 
   "?" should "return result" in {
     val job = router ? { arg => arg + 1 }
@@ -66,16 +66,18 @@ class RouterSpec extends FlatSpec with Matchers {
     val future = promise.future
     actorSystem.actorOf(Props(
       new Actor {
+
         import Router._
+
         override def receive: Receive = {
-          case Success(JobResponse(v:Int, _)) =>  promise.success(v);()
+          case Success(JobResponse(v: Int, _)) => promise.success(v); ()
         }
 
         @scala.throws[Exception](classOf[Exception])
         override def preStart(): Unit = {
           super.preStart()
           // send message from actor
-          router ?? {arg => arg + 1}
+          router ?? { arg => arg + 1 }
         }
       }
     ))
@@ -89,16 +91,18 @@ class RouterSpec extends FlatSpec with Matchers {
     val future = promise.future
     actorSystem.actorOf(Props(
       new Actor {
+
         import Router._
+
         override def receive: Receive = {
-          case Success(JobResponse(v:Int, Some(c:Int))) if(c == 1) =>  promise.success(v);()
+          case Success(JobResponse(v: Int, Some(c: Int))) if (c == 1) => promise.success(v); ()
         }
 
         @scala.throws[Exception](classOf[Exception])
         override def preStart(): Unit = {
           super.preStart()
           // send message from actor
-          router ?? ({arg => arg + 1}, Some(1))
+          router ?? ( { arg => arg + 1 }, Some(1))
         }
       }
     ))

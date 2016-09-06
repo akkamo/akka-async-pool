@@ -2,7 +2,7 @@ package eu.akkamo.asyncpool
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props}
 import akka.pattern.{AskTimeoutException, ask}
-import akka.routing.FromConfig
+import akka.routing.{FromConfig, RouterConfig}
 import akka.util.Timeout
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -13,7 +13,7 @@ import scala.util.{Failure, Success, Try}
   *
   * @param actor router Actor
   */
-class Router[U, V](val actor: ActorRef) {
+class Router[U](val actor: ActorRef) {
 
   import java.util.concurrent.TimeUnit.SECONDS
 
@@ -30,8 +30,8 @@ class Router[U, V](val actor: ActorRef) {
     * @return result as [[scala.concurrent.Future]]
     */
   @throws[AskTimeoutException]
-  def ?(job: Job[U, V])(implicit ec: ExecutionContext = Implicits.global,
-                        timeout: Timeout = Timeout(60, SECONDS)): Future[V] = {
+  def ?[V](job: Job[U, V])(implicit ec: ExecutionContext = Implicits.global,
+                           timeout: Timeout = Timeout(60, SECONDS)): Future[V] = {
     ask(actor, Router.Task(job, true)).map(_.asInstanceOf[Response[V, _]]).flatMap {
       case Failure(th) => Future.failed(th)
       case Success(JobResponse(value, _)) => Future.successful(value)
@@ -43,7 +43,7 @@ class Router[U, V](val actor: ActorRef) {
     *
     * @param job job for processing
     */
-  def !(job: Job[U, V]): Unit = {
+  def ![V](job: Job[U, V]): Unit = {
     actor ! Router.Task(job, false)
   }
 
@@ -55,7 +55,7 @@ class Router[U, V](val actor: ActorRef) {
     * @param sender
     * @tparam CTX non mandatory context, returned in response
     */
-  def ??[CTX](job: Job[U, V], ctx:Option[CTX] = None)(implicit sender: ActorRef): Unit = {
+  def ??[V, CTX](job: Job[U, V], ctx: Option[CTX] = None)(implicit sender: ActorRef): Unit = {
     actor ! Router.Task(job, true, ctx)
   }
 }
@@ -65,69 +65,85 @@ object Router {
 
   /**
     * Job Response
+    *
     * @param value job result
-    * @param ctx optional context passed when ask (see. [[eu.akkamo.asyncpool.Router.??]])  is called
-    * @tparam V the job result Type
+    * @param ctx   optional context passed when ask (see. [[eu.akkamo.asyncpool.Router.??]])  is called
+    * @tparam V   the job result Type
     * @tparam CTX optional context Type
     */
-  case class JobResponse[V, CTX](value: V, ctx:Option[CTX] = None)
+  case class JobResponse[V, CTX](value: V, ctx: Option[CTX] = None)
 
   type Response[V, CTX] = Try[JobResponse[V, CTX]]
 
   type Job[U, V] = (U) => V
 
-  type SF[U] = Either[String => U, (String, ActorSystem) => U]
+  type SessionFactoryWrapper[U] = Either[String => U, (String, ActorSystem) => U]
 
   /**
     *
-    * @param ctxFactory function accepting string
-    * @param name router name
-    * @param as implicit Akka actor system
-    * @tparam U the `ctx` type
-    * @tparam V the Job result type
+    * @param sessionFactory function accepts string (Router name) returns `session`
+    * @param name           router name
+    * @param as             implicit Akka actor system
+    * @tparam U the `session` type
     * @return instance of router
     */
-  def buildRouter[U, V](ctxFactory: String => U, name: String)(implicit as: ActorSystem) = {
-    new Router[U, V](as.actorOf(FromConfig.props(Props(classOf[Worker[V]], Left(ctxFactory))), name))
+  def buildRouter[U](sessionFactory: String => U, name: String)(implicit as: ActorSystem) = {
+    new Router[U](as.actorOf(FromConfig.props(Props(classOf[Worker[U]], Left(sessionFactory))), name))
   }
 
   /**
     *
-    * @param ctxFactory function accepting (string, Akka actor system)
-    * @param name router name
-    * @param as implicit Akka actor system
-    * @tparam U the `ctx` type
-    * @tparam V the Job result type
+    * @param sessionFactory function accepts (string (router name), Akka actor system) returns 'session'
+    * @param name           router name
+    * @param as             implicit Akka actor system
+    * @tparam U `session` type
     * @return instance of router
     */
-  def buildRouter[U, V](ctxFactory: (String, ActorSystem) => U, name: String)(implicit as: ActorSystem) = {
-    new Router[U, V](as.actorOf(FromConfig.props(Props(classOf[Worker[V]], Left(ctxFactory))), name))
+  def buildRouter[U](sessionFactory: (String, ActorSystem) => U, name: String)(implicit as: ActorSystem) = {
+    new Router[U](as.actorOf(FromConfig.props(Props(classOf[Worker[U]], Right(sessionFactory))), name))
+  }
+
+  /**
+    *
+    * @param sessionFactory function accepts string (Router name) returns `session`
+    * @param routerConfig   router configuration
+    * @tparam U `session` type
+    * @return instance of router Props
+    */
+  def buildRouterProps[U](sessionFactory: String => U, routerConfig: RouterConfig): Props = {
+    Props(classOf[Worker[U]], Left(sessionFactory)).withRouter(routerConfig)
+  }
+
+  /**
+    *
+    * @param sessionFactory function accepts (string (router name), Akka actor system) returns 'session'
+    * @param routerConfig   router configuration
+    * @tparam U `session` type
+    * @return instance of router Props
+    */
+  def buildRouterProps[U](sessionFactory: (String, ActorSystem) => U, routerConfig: RouterConfig): Props = {
+    Props(classOf[Worker[U]], Right(sessionFactory)).withRouter(routerConfig)
   }
 
   @SerialVersionUID(1L)
-  private[Router] case class Task[T, U, CTX](val f: T => U, ask: Boolean,  ctx:Option[CTX] = None) extends Serializable {
-    def apply(t: T): U = {
-      f(t)
-    }
-  }
+  private[Router] case class Task[U, V, CTX](val job: Job[U, V], ask: Boolean, ctx: Option[CTX] = None) extends Serializable
 
   /**
     * @param ctxFactory
-    * @tparam U worker `ctx` type
-    * @author jubu
+    * @tparam U worker `session` type
     */
-  private class Worker[U](ctxFactory: SF[U]) extends Actor with ActorLogging {
+  private class Worker[U](ctxFactory: SessionFactoryWrapper[U]) extends Actor with ActorLogging {
 
-    private val ctx = ctxFactory match {
+    private val session = ctxFactory match {
       case Left(f) => f(context.parent.path.name)
       case Right(f) => f(context.parent.path.name, context.system)
     }
 
     def receive = {
-      case t: Task[U, _,_] => try {
+      case t: Task[U, _, _] => try {
         log.debug(s"Task received: $t")
-        val res = t(ctx)
-        if(t.ask) {
+        val res = t.job(session)
+        if (t.ask) {
           sender ! Success(JobResponse(res, t.ctx))
         }
       } catch {
@@ -157,5 +173,4 @@ object Router {
       log.error(reason, s"restarted with message:$message, path: ${self.path}")
     }
   }
-
 }
