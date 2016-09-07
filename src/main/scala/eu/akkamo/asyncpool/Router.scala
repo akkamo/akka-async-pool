@@ -9,9 +9,11 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
 /**
-  * Router
+  * Represents typed router, performing particular [[eu.akkamo.asyncpool.Router.Job jobs]] using
+  * available workers.
   *
-  * @param actor router Actor
+  * @param actor router actor
+  * @tparam U type of the router
   */
 class Router[U](val actor: ActorRef) {
 
@@ -32,7 +34,7 @@ class Router[U](val actor: ActorRef) {
   @throws[AskTimeoutException]
   def ?[V](job: Job[U, V])(implicit ec: ExecutionContext = Implicits.global,
                            timeout: Timeout = Timeout(60, SECONDS)): Future[V] = {
-    ask(actor, Router.Task(job, true)).map(_.asInstanceOf[Response[V, _]]).flatMap {
+    ask(actor, Router.Task(job, ask = true)).map(_.asInstanceOf[Response[V, _]]).flatMap {
       case Failure(th) => Future.failed(th)
       case Success(JobResponse(value, _)) => Future.successful(value)
     }
@@ -44,19 +46,19 @@ class Router[U](val actor: ActorRef) {
     * @param job job for processing
     */
   def ![V](job: Job[U, V]): Unit = {
-    actor ! Router.Task(job, false)
+    actor ! Router.Task(job, ask = false)
   }
 
   /**
     * Send `job` to the worker,then send job result as response:[[eu.akkamo.asyncpool.Router#Response]]
     * back to the  the `sender`
     *
-    * @param job job for processing
-    * @param sender
+    * @param job    job for processing
+    * @param sender sender of the job
     * @tparam CTX non mandatory context, returned in response
     */
   def ??[V, CTX](job: Job[U, V], ctx: Option[CTX] = None)(implicit sender: ActorRef): Unit = {
-    actor ! Router.Task(job, true, ctx)
+    actor ! Router.Task(job, ask = true, ctx)
   }
 }
 
@@ -126,12 +128,8 @@ object Router {
   }
 
   @SerialVersionUID(1L)
-  private[Router] case class Task[U, V, CTX](val job: Job[U, V], ask: Boolean, ctx: Option[CTX] = None) extends Serializable
+  private[Router] case class Task[U, V, CTX](job: Job[U, V], ask: Boolean, ctx: Option[CTX] = None) extends Serializable
 
-  /**
-    * @param ctxFactory
-    * @tparam U worker `session` type
-    */
   private class Worker[U](ctxFactory: SessionFactoryWrapper[U]) extends Actor with ActorLogging {
 
     private val session = ctxFactory match {
@@ -147,11 +145,10 @@ object Router {
           sender ! Success(JobResponse(res, t.ctx))
         }
       } catch {
-        case e: Throwable => {
+        case e: Throwable =>
           sender ! Failure(e)
           log.error(e, "received task failed")
           throw e
-        }
       }
     }
 
@@ -173,4 +170,5 @@ object Router {
       log.error(reason, s"restarted with message:$message, path: ${self.path}")
     }
   }
+
 }

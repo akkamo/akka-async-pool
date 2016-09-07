@@ -11,6 +11,8 @@ import scala.concurrent.{Await, Promise}
 import scala.util.{Success, Try}
 
 /**
+  * `Scalatest` specification for the [[Router]] class.
+  *
   * @author jubu
   */
 class RouterSpec extends FlatSpec with Matchers {
@@ -95,7 +97,7 @@ class RouterSpec extends FlatSpec with Matchers {
         import Router._
 
         override def receive: Receive = {
-          case Success(JobResponse(v: Int, Some(c: Int))) if (c == 1) => promise.success(v); ()
+          case Success(JobResponse(v: Int, Some(c: Int))) if c == 1 => promise.success(v); ()
         }
 
         @scala.throws[Exception](classOf[Exception])
