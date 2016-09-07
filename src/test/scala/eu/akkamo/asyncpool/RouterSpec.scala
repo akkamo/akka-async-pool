@@ -33,20 +33,20 @@ class RouterSpec extends FlatSpec with Matchers {
 
   private lazy val router = Router.buildRouter[Int](sessionFactory, name)
 
-  "?" should "return result" in {
-    val job = router ? { arg => arg + 1 }
+  "ask" should "return result" in {
+    val job = router ask { arg => arg + 1 }
     val result: Int = Await.result(job, Duration(1, SECONDS))
     assert(result == 11)
   }
 
-  "?" should "throws exception" in {
-    val job = router ? { arg => throw new RuntimeException("Error occured") }
+  "ask" should "throws exception" in {
+    val job = router ask { arg => throw new RuntimeException("Error occured") }
     an[Exception] should be thrownBy Await.result(job, Duration(1, SECONDS))
   }
 
-  "?" should "accept implicit timeout" in {
+  "ask" should "accept implicit timeout" in {
     implicit val timeout: Timeout = 10 microsecond
-    val job = router ? { arg =>
+    val job = router ask { arg =>
       Try(Thread.sleep(100))
       arg + 1
     }
@@ -63,7 +63,7 @@ class RouterSpec extends FlatSpec with Matchers {
     assert(result != 0)
   }
 
-  "??" should "created Actor should return result" in {
+  "?" should "created Actor should return result" in {
     val promise = Promise[Int]()
     val future = promise.future
     actorSystem.actorOf(Props(
@@ -79,7 +79,7 @@ class RouterSpec extends FlatSpec with Matchers {
         override def preStart(): Unit = {
           super.preStart()
           // send message from actor
-          router ?? { arg => arg + 1 }
+          router ? { arg => arg + 1 }
         }
       }
     ))
@@ -88,7 +88,7 @@ class RouterSpec extends FlatSpec with Matchers {
     assert(response == 11)
   }
 
-  "??" should "created Actor should return context + result" in {
+  "?" should "created Actor should return context + result" in {
     val promise = Promise[Int]()
     val future = promise.future
     actorSystem.actorOf(Props(
@@ -104,7 +104,7 @@ class RouterSpec extends FlatSpec with Matchers {
         override def preStart(): Unit = {
           super.preStart()
           // send message from actor
-          router ?? ( { arg => arg + 1 }, Some(1))
+          router ? ( { arg => arg + 1 }, Some(1))
         }
       }
     ))

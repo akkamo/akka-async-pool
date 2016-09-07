@@ -1,12 +1,14 @@
 package eu.akkamo.asyncpool
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props}
-import akka.pattern.{AskTimeoutException, ask}
+import akka.pattern.{AskTimeoutException}
 import akka.routing.{FromConfig, RouterConfig}
 import akka.util.Timeout
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
+import java.util.concurrent.TimeUnit.SECONDS
+import scala.concurrent.ExecutionContext.Implicits
 
 /**
   * Represents typed router, performing particular [[eu.akkamo.asyncpool.Router.Job jobs]] using
@@ -17,11 +19,7 @@ import scala.util.{Failure, Success, Try}
   */
 class Router[U](val actor: ActorRef) {
 
-  import java.util.concurrent.TimeUnit.SECONDS
-
   import Router._
-
-  import scala.concurrent.ExecutionContext.Implicits
 
   /**
     * Send `job` to the worker and retrieve response
@@ -32,9 +30,9 @@ class Router[U](val actor: ActorRef) {
     * @return result as [[scala.concurrent.Future]]
     */
   @throws[AskTimeoutException]
-  def ?[V](job: Job[U, V])(implicit ec: ExecutionContext = Implicits.global,
-                           timeout: Timeout = Timeout(60, SECONDS)): Future[V] = {
-    ask(actor, Router.Task(job, ask = true)).map(_.asInstanceOf[Response[V, _]]).flatMap {
+  def ask[V](job: Job[U, V])(implicit ec: ExecutionContext = Implicits.global,
+                             timeout: Timeout = Timeout(60, SECONDS)): Future[V] = {
+    akka.pattern.ask(actor, Router.Task(job, ask = true)).map(_.asInstanceOf[Response[V, _]]).flatMap {
       case Failure(th) => Future.failed(th)
       case Success(JobResponse(value, _)) => Future.successful(value)
     }
@@ -57,7 +55,7 @@ class Router[U](val actor: ActorRef) {
     * @param sender sender of the job
     * @tparam CTX non mandatory context, returned in response
     */
-  def ??[V, CTX](job: Job[U, V], ctx: Option[CTX] = None)(implicit sender: ActorRef): Unit = {
+  def ?[V, CTX](job: Job[U, V], ctx: Option[CTX] = None)(implicit sender: ActorRef): Unit = {
     actor ! Router.Task(job, ask = true, ctx)
   }
 }
@@ -69,7 +67,7 @@ object Router {
     * Job Response
     *
     * @param value job result
-    * @param ctx   optional context passed when ask (see. [[eu.akkamo.asyncpool.Router.??]])  is called
+    * @param ctx   optional context passed when ask (see. [[eu.akkamo.asyncpool.Router.ask]])  is called
     * @tparam V   the job result Type
     * @tparam CTX optional context Type
     */
@@ -125,6 +123,11 @@ object Router {
     */
   def buildRouterProps[U](sessionFactory: (String, ActorSystem) => U, routerConfig: RouterConfig): Props = {
     Props(classOf[Worker[U]], Right(sessionFactory)).withRouter(routerConfig)
+  }
+
+  implicit def ?[U](router:Router[U])(implicit ec: ExecutionContext = Implicits.global,
+                                      timeout: Timeout = Timeout(60, SECONDS)) = {
+    router.ask
   }
 
   @SerialVersionUID(1L)
