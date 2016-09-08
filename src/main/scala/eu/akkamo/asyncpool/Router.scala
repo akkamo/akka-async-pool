@@ -1,14 +1,15 @@
 package eu.akkamo.asyncpool
 
+import java.util.concurrent.TimeUnit.SECONDS
+
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props}
-import akka.pattern.{AskTimeoutException}
+import akka.pattern.AskTimeoutException
 import akka.routing.{FromConfig, RouterConfig}
 import akka.util.Timeout
 
+import scala.concurrent.ExecutionContext.Implicits
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
-import java.util.concurrent.TimeUnit.SECONDS
-import scala.concurrent.ExecutionContext.Implicits
 
 /**
   * Represents typed router, performing particular [[eu.akkamo.asyncpool.Router.Job jobs]] using
@@ -123,11 +124,6 @@ object Router {
     */
   def buildRouterProps[U](sessionFactory: (String, ActorSystem) => U, routerConfig: RouterConfig): Props = {
     Props(classOf[Worker[U]], Right(sessionFactory)).withRouter(routerConfig)
-  }
-
-  implicit def ?[U](router:Router[U])(implicit ec: ExecutionContext = Implicits.global,
-                                      timeout: Timeout = Timeout(60, SECONDS)) = {
-    router.ask
   }
 
   @SerialVersionUID(1L)
